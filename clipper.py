@@ -4,8 +4,10 @@ Pipeline: yt-dlp (download) -> faster-whisper (word-level transcript, GPU)
 -> Ollama local LLM (pick highlights, heuristic fallback) -> ffmpeg (cut, crop, captions).
 """
 import json
+import os
 import re
 import subprocess
+import sys
 import urllib.request
 from pathlib import Path
 
@@ -30,11 +32,22 @@ def mmss(t):
 def download(url, workdir, cb=None):
     log(cb, "Downloading video with yt-dlp...")
     template = str(Path(workdir) / "source.%(ext)s")
-    subprocess.run(
-        ["yt-dlp", "-f", "bv*[height<=1080]+ba/b[height<=1080]",
-         "--merge-output-format", "mp4", "-o", template, url],
-        check=True,
-    )
+    cmd = [sys.executable, "-m", "yt_dlp", "--no-playlist",
+           "-f", "bv*[height<=1080]+ba/b[height<=1080]",
+           "--merge-output-format", "mp4", "-o", template]
+    browser = os.environ.get("CLIPPER_COOKIES_BROWSER")  # e.g. "chrome" or "safari"
+    if browser:
+        cmd += ["--cookies-from-browser", browser]
+    r = subprocess.run(cmd + [url], capture_output=True, text=True)
+    if r.returncode != 0:
+        raise RuntimeError(
+            "yt-dlp could not download the video. Its error was:\n"
+            + (r.stderr or r.stdout)[-1200:]
+            + "\n\nCommon fixes: 1) pip install -U yt-dlp  2) install ffmpeg (brew install ffmpeg)  "
+              "3) install a JavaScript runtime (brew install deno)  "
+              "4) if it says 'confirm you're not a bot', start the app with "
+              "CLIPPER_COOKIES_BROWSER=chrome python app.py  5) or download the video yourself and upload the file."
+        )
     return Path(workdir) / "source.mp4"
 
 
